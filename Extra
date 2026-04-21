@@ -1,0 +1,35 @@
+package com.HospitalManagement.controller;
+
+import com.HospitalManagement.entity.InventoryItem;
+import com.HospitalManagement.service.PharmacyService;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/pharmacy")
+public class PharmacyController {
+
+    @Autowired
+    private PharmacyService service;
+
+    // ✅ 1. View Inventory
+    @GetMapping("/inventory")
+    public List<InventoryItem> getInventory() {
+        return service.getAllInventory();
+    }
+
+    // ✅ 2. Add Stock
+    @PostMapping("/addStock")
+    public InventoryItem addStock(@RequestBody InventoryItem item) {
+        return service.addStock(item);
+    }
+
+    // ✅ 3. Dispense Medicine
+    @PostMapping("/dispense")
+    public String dispense(@RequestParam Long id, @RequestParam int qty) {
+        return service.dispenseMedicine(id, qty);
+    }
+}
