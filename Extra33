@@ -1,0 +1,486 @@
+package com.HospitalManagement.repository;
+
+import com.HospitalManagement.entity.LabOrder;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface LabOrderRepository extends JpaRepository<LabOrder, Long> {
+
+    // 🔍 Get all orders for a patient
+    List<LabOrder> findByPatient_PatientId(Long patientId);
+
+    // 🔍 Get all orders for an encounter
+    List<LabOrder> findByEncounter_EncounterId(Long encounterId);
+
+    // 🔍 Get orders by status (ORDERED, COMPLETED, etc.)
+    List<LabOrder> findByStatus(String status);
+
+    // 🔍 Get orders by doctor
+    List<LabOrder> findByOrderedBy_UserId(Long userId);
+
+    // 🔍 Get orders by sampleId (tracking)
+    LabOrder findBySampleId(String sampleId);
+}
+package com.HospitalManagement.repository;
+
+import com.HospitalManagement.entity.LabResult;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface LabResultRepository extends JpaRepository<LabResult, Long> {
+
+    // 🔍 Get all results for a lab order
+    List<LabResult> findByLabOrder_LabOrderId(Long labOrderId);
+
+    // 🔍 Get results by test code (e.g., GLUCOSE)
+    List<LabResult> findByTestCode(String testCode);
+
+    // 🔍 Get results by flag (CRITICAL, HIGH, etc.)
+    List<LabResult> findByFlag(String flag);
+
+    // 🔍 Get results reported by a specific user
+    List<LabResult> findByReportedBy_UserId(Long userId);
+}
+
+package com.HospitalManagement.dto.lab;
+
+import lombok.Data;
+
+@Data
+public class LabOrderRequestDTO {
+
+    private Long encounterId;
+    private Long patientId;
+    private Long orderedBy;
+
+    // JSON string like ["GLUCOSE", "CBC"]
+    private String testsJson;
+}
+
+package com.HospitalManagement.dto.lab;
+
+import lombok.Builder;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+public class LabOrderResponseDTO {
+
+    private Long labOrderId;
+
+    private Long encounterId;
+    private Long patientId;
+    private Long orderedBy;
+
+    private String testsJson;
+
+    private String sampleId;
+    private LocalDateTime collectedAt;
+
+    private String status;
+    private String resultUri;
+}
+package com.HospitalManagement.dto.lab;
+
+import lombok.Data;
+
+@Data
+public class LabResultRequestDTO {
+
+    private Long labOrderId;
+
+    private String testCode;
+    private String value;
+    private String units;
+
+    // JSON:
+    // { "low": 70, "high": 110, "criticalLow": 50, "criticalHigh": 200 }
+    private String referenceRangeJson;
+
+    private Long reportedBy;
+}
+package com.HospitalManagement.dto.lab;
+
+import lombok.Builder;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+public class LabResultResponseDTO {
+
+    private Long resultId;
+
+    private Long labOrderId;
+
+    private String testCode;
+    private String value;
+    private String units;
+
+    private String flag;
+
+    private LocalDateTime reportedAt;
+
+    private Long reportedBy;
+}
+package com.HospitalManagement.service;
+
+import com.HospitalManagement.dto.lab.*;
+import com.HospitalManagement.entity.*;
+import com.HospitalManagement.repository.*;
+import lombok.RequiredArgsConstructor;
+import org.json.JSONObject;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.*;
+
+@Service
+@RequiredArgsConstructor
+public class LabService {
+
+    private final LabOrderRepository labOrderRepository;
+    private final LabResultRepository labResultRepository;
+
+    private final PatientRepository patientRepository;
+    private final EncounterRepository encounterRepository;
+    private final UserRepository userRepository;
+
+    // =====================================================
+    // ✅ CREATE LAB ORDER
+    // =====================================================
+    public LabOrderResponseDTO createLabOrder(LabOrderRequestDTO dto) {
+
+        Patient patient = patientRepository.findById(dto.getPatientId())
+                .orElseThrow(() -> new RuntimeException("Patient not found"));
+
+        Encounter encounter = encounterRepository.findById(dto.getEncounterId())
+                .orElseThrow(() -> new RuntimeException("Encounter not found"));
+
+        User doctor = userRepository.findById(dto.getOrderedBy())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        LabOrder order = LabOrder.builder()
+                .patient(patient)
+                .encounter(encounter)
+                .orderedBy(doctor)
+                .testsJson(dto.getTestsJson())
+                .status("ORDERED")
+                .build();
+
+        LabOrder saved = labOrderRepository.save(order);
+
+        return mapToOrderDTO(saved);
+    }
+
+    // =====================================================
+    // 🔍 GET OPERATIONS
+    // =====================================================
+    public LabOrderResponseDTO getOrderById(Long id) {
+        return mapToOrderDTO(getOrderEntity(id));
+    }
+
+    public List<LabOrderResponseDTO> getOrdersByPatient(Long patientId) {
+        List<LabOrder> orders = labOrderRepository.findByPatient_PatientId(patientId);
+        return orders.stream().map(this::mapToOrderDTO).toList();
+    }
+
+    public List<LabOrderResponseDTO> getOrdersByEncounter(Long encounterId) {
+        List<LabOrder> orders = labOrderRepository.findByEncounter_EncounterId(encounterId);
+        return orders.stream().map(this::mapToOrderDTO).toList();
+    }
+
+    public List<LabResultResponseDTO> getResultsByOrder(Long orderId) {
+        List<LabResult> results = labResultRepository.findByLabOrder_LabOrderId(orderId);
+        return results.stream().map(this::mapToResultDTO).toList();
+    }
+
+    // =====================================================
+    // 🧪 SAMPLE COLLECTION
+    // =====================================================
+    public LabOrderResponseDTO collectSample(Long orderId, String sampleId) {
+
+        LabOrder order = getOrderEntity(orderId);
+
+        order.setSampleId(sampleId);
+        order.setCollectedAt(LocalDateTime.now());
+        order.setStatus("SAMPLE_COLLECTED");
+
+        return mapToOrderDTO(labOrderRepository.save(order));
+    }
+
+    // =====================================================
+    // 🧪 ADD RESULT (CORE LOGIC 🔥)
+    // =====================================================
+    @Transactional
+    public LabResultResponseDTO addLabResult(LabResultRequestDTO dto) {
+
+        LabOrder order = getOrderEntity(dto.getLabOrderId());
+
+        User user = userRepository.findById(dto.getReportedBy())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // 🔥 FLAG LOGIC
+        String flag = evaluateFlag(dto.getValue(), dto.getReferenceRangeJson());
+
+        LabResult result = LabResult.builder()
+                .labOrder(order)
+                .testCode(dto.getTestCode())
+                .value(dto.getValue())
+                .units(dto.getUnits())
+                .referenceRangeJson(dto.getReferenceRangeJson())
+                .flag(flag)
+                .reportedAt(LocalDateTime.now())
+                .reportedBy(user)
+                .build();
+
+        LabResult saved = labResultRepository.save(result);
+
+        // 🔔 CRITICAL ALERT
+        if ("CRITICAL".equals(flag)) {
+            sendCriticalAlert(saved);
+        }
+
+        // 🔁 REFLEX TESTING
+        List<String> reflexTests = checkReflexTests(dto.getTestCode(), dto.getValue());
+        if (!reflexTests.isEmpty()) {
+            createReflexOrder(order, reflexTests);
+        }
+
+        // 🔄 UPDATE ORDER STATUS
+        updateOrderCompletion(order);
+
+        return mapToResultDTO(saved);
+    }
+
+    // =====================================================
+    // ✏️ UPDATE RESULT
+    // =====================================================
+    public LabResultResponseDTO updateResult(Long resultId, String value) {
+
+        LabResult result = labResultRepository.findById(resultId)
+                .orElseThrow(() -> new RuntimeException("Result not found"));
+
+        result.setValue(value);
+
+        String flag = evaluateFlag(value, result.getReferenceRangeJson());
+        result.setFlag(flag);
+
+        return mapToResultDTO(labResultRepository.save(result));
+    }
+
+    // =====================================================
+    // 🔧 HELPER METHODS
+    // =====================================================
+
+    private LabOrder getOrderEntity(Long id) {
+        return labOrderRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Lab Order not found"));
+    }
+
+    // 🔥 FLAG ENGINE
+    private String evaluateFlag(String value, String refJson) {
+
+        try {
+            JSONObject ref = new JSONObject(refJson);
+            double val = Double.parseDouble(value);
+
+            if (val <= ref.getDouble("criticalLow") || val >= ref.getDouble("criticalHigh")) {
+                return "CRITICAL";
+            }
+            if (val < ref.getDouble("low")) {
+                return "LOW";
+            }
+            if (val > ref.getDouble("high")) {
+                return "HIGH";
+            }
+            return "NORMAL";
+
+        } catch (Exception e) {
+            return "NORMAL";
+        }
+    }
+
+    // 🔁 REFLEX RULE ENGINE
+    private List<String> checkReflexTests(String testCode, String value) {
+
+        List<String> list = new ArrayList<>();
+
+        if ("GLUCOSE".equalsIgnoreCase(testCode) && Double.parseDouble(value) > 200) {
+            list.add("HBA1C");
+        }
+
+        return list;
+    }
+
+    // 🔁 CREATE REFLEX ORDER
+    private void createReflexOrder(LabOrder parent, List<String> tests) {
+
+        LabOrder newOrder = LabOrder.builder()
+                .patient(parent.getPatient())
+                .encounter(parent.getEncounter())
+                .orderedBy(parent.getOrderedBy())
+                .testsJson(tests.toString())
+                .status("ORDERED")
+                .build();
+
+        labOrderRepository.save(newOrder);
+    }
+
+    // 🔔 ALERT (can upgrade later)
+    private void sendCriticalAlert(LabResult result) {
+        System.out.println("🚨 CRITICAL RESULT: " + result.getTestCode());
+    }
+
+    // 🔄 UPDATE ORDER STATUS
+    private void updateOrderCompletion(LabOrder order) {
+
+        List<LabResult> results =
+                labResultRepository.findByLabOrder_LabOrderId(order.getLabOrderId());
+
+        if (!results.isEmpty()) {
+            order.setStatus("COMPLETED");
+            labOrderRepository.save(order);
+        }
+    }
+
+    // =====================================================
+    // 🔄 DTO MAPPERS
+    // =====================================================
+
+    private LabOrderResponseDTO mapToOrderDTO(LabOrder order) {
+        return LabOrderResponseDTO.builder()
+                .labOrderId(order.getLabOrderId())
+                .patientId(order.getPatient().getPatientId())
+                .encounterId(order.getEncounter().getEncounterId())
+                .orderedBy(order.getOrderedBy().getUserId())
+                .testsJson(order.getTestsJson())
+                .sampleId(order.getSampleId())
+                .collectedAt(order.getCollectedAt())
+                .status(order.getStatus())
+                .resultUri(order.getResultUri())
+                .build();
+    }
+
+    private LabResultResponseDTO mapToResultDTO(LabResult result) {
+        return LabResultResponseDTO.builder()
+                .resultId(result.getResultId())
+                .labOrderId(result.getLabOrder().getLabOrderId())
+                .testCode(result.getTestCode())
+                .value(result.getValue())
+                .units(result.getUnits())
+                .flag(result.getFlag())
+                .reportedAt(result.getReportedAt())
+                .reportedBy(result.getReportedBy().getUserId())
+                .build();
+    }
+}
+package com.HospitalManagement.controller;
+
+import com.HospitalManagement.dto.lab.*;
+import com.HospitalManagement.service.LabService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/lab")
+@RequiredArgsConstructor
+public class LabController {
+
+    private final LabService labService;
+
+    // =====================================================
+    // 🧾 CREATE LAB ORDER
+    // =====================================================
+    @PostMapping("/orders")
+    public ResponseEntity<LabOrderResponseDTO> createOrder(
+            @RequestBody LabOrderRequestDTO dto) {
+
+        return ResponseEntity.ok(labService.createLabOrder(dto));
+    }
+
+    // =====================================================
+    // 🔍 GET LAB ORDER BY ID
+    // =====================================================
+    @GetMapping("/orders/{orderId}")
+    public ResponseEntity<LabOrderResponseDTO> getOrderById(
+            @PathVariable Long orderId) {
+
+        return ResponseEntity.ok(labService.getOrderById(orderId));
+    }
+
+    // =====================================================
+    // 🔍 GET ORDERS BY PATIENT
+    // =====================================================
+    @GetMapping("/orders/patient/{patientId}")
+    public ResponseEntity<List<LabOrderResponseDTO>> getOrdersByPatient(
+            @PathVariable Long patientId) {
+
+        return ResponseEntity.ok(labService.getOrdersByPatient(patientId));
+    }
+
+    // =====================================================
+    // 🔍 GET ORDERS BY ENCOUNTER
+    // =====================================================
+    @GetMapping("/orders/encounter/{encounterId}")
+    public ResponseEntity<List<LabOrderResponseDTO>> getOrdersByEncounter(
+            @PathVariable Long encounterId) {
+
+        return ResponseEntity.ok(labService.getOrdersByEncounter(encounterId));
+    }
+
+    // =====================================================
+    // 🧪 SAMPLE COLLECTION
+    // =====================================================
+    @PostMapping("/orders/{orderId}/collect")
+    public ResponseEntity<LabOrderResponseDTO> collectSample(
+            @PathVariable Long orderId,
+            @RequestParam String sampleId) {
+
+        return ResponseEntity.ok(labService.collectSample(orderId, sampleId));
+    }
+
+    // =====================================================
+    // 🧪 ADD LAB RESULT
+    // =====================================================
+    @PostMapping("/results")
+    public ResponseEntity<LabResultResponseDTO> addResult(
+            @RequestBody LabResultRequestDTO dto) {
+
+        return ResponseEntity.ok(labService.addLabResult(dto));
+    }
+
+    // =====================================================
+    // 🔍 GET RESULTS BY ORDER
+    // =====================================================
+    @GetMapping("/results/order/{orderId}")
+    public ResponseEntity<List<LabResultResponseDTO>> getResultsByOrder(
+            @PathVariable Long orderId) {
+
+        return ResponseEntity.ok(labService.getResultsByOrder(orderId));
+    }
+
+    // =====================================================
+    // ✏️ UPDATE RESULT VALUE
+    // =====================================================
+    @PutMapping("/results/{resultId}")
+    public ResponseEntity<LabResultResponseDTO> updateResult(
+            @PathVariable Long resultId,
+            @RequestParam String value) {
+
+        return ResponseEntity.ok(labService.updateResult(resultId, value));
+    }
+}
