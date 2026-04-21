@@ -1,0 +1,65 @@
+package com.HospitalManagement.service;
+
+import com.HospitalManagement.entity.InventoryItem;
+import com.HospitalManagement.entity.DispenseRecord;
+import com.HospitalManagement.repository.InventoryRepository;
+import com.HospitalManagement.repository.DispenseRepository;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+public class PharmacyService {
+
+    @Autowired
+    private InventoryRepository inventoryRepo;
+
+    @Autowired
+    private DispenseRepository dispenseRepo;
+
+    // ✅ 1. View Inventory
+    public List<InventoryItem> getAllInventory() {
+        return inventoryRepo.findAll();
+    }
+
+    // ✅ 2. Add Stock
+    public InventoryItem addStock(InventoryItem item) {
+        item.setStatus("AVAILABLE");
+        return inventoryRepo.save(item);
+    }
+
+    // ✅ 3. Dispense Medicine
+    public String dispenseMedicine(Long inventoryId, int qty) {
+
+        InventoryItem item = inventoryRepo.findById(inventoryId).orElseThrow();
+
+        // ❌ Stock check
+        if (item.getQuantity() < qty) {
+            return "Out of stock";
+        }
+
+        // ❌ Expiry check
+        if (item.getExpiryDate().isBefore(LocalDate.now())) {
+            return "Medicine expired";
+        }
+
+        // ✅ Reduce stock
+        item.setQuantity(item.getQuantity() - qty);
+        inventoryRepo.save(item);
+
+        // ✅ Save dispense record
+        DispenseRecord record = new DispenseRecord();
+        record.setInventoryId(inventoryId);
+        record.setQuantity(qty);
+        record.setDispensedAt(LocalDateTime.now());
+        record.setStatus("DONE");
+
+        dispenseRepo.save(record);
+
+        return "Medicine dispensed successfully";
+    }
+}
