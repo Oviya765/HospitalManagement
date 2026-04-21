@@ -1,0 +1,112 @@
+package com.HospitalManagement.controller;
+
+import com.HospitalManagement.dto.lab.*;
+import com.HospitalManagement.service.LabService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/lab")
+@RequiredArgsConstructor
+public class LabController {
+
+    private final LabService labService;
+
+    // =====================================================
+    // 🧾 CREATE LAB ORDER (DOCTOR)
+    // =====================================================
+    @PreAuthorize("hasRole('DOCTOR')")
+    @PostMapping("/orders")
+    public ResponseEntity<LabOrderResponseDTO> createOrder(
+            @RequestBody LabOrderRequestDTO dto) {
+
+        return ResponseEntity.ok(labService.createLabOrder(dto));
+    }
+
+    // =====================================================
+    // 🔍 GET LAB ORDER BY ID
+    // DOCTOR, LAB_TECHNICIAN, ADMIN
+    // =====================================================
+    @PreAuthorize("hasAnyRole('DOCTOR','LAB_TECHNICIAN','ADMIN')")
+    @GetMapping("/orders/{orderId}")
+    public ResponseEntity<LabOrderResponseDTO> getOrderById(
+            @PathVariable Long orderId) {
+
+        return ResponseEntity.ok(labService.getOrderById(orderId));
+    }
+
+    // =====================================================
+    // 🔍 GET ORDERS BY PATIENT
+    // DOCTOR, ADMIN
+    // =====================================================
+    @PreAuthorize("hasAnyRole('DOCTOR','ADMIN')")
+    @GetMapping("/orders/patient/{patientId}")
+    public ResponseEntity<List<LabOrderResponseDTO>> getOrdersByPatient(
+            @PathVariable Long patientId) {
+
+        return ResponseEntity.ok(labService.getOrdersByPatient(patientId));
+    }
+
+    // =====================================================
+    // 🔍 GET ORDERS BY ENCOUNTER
+    // DOCTOR, LAB_TECHNICIAN, ADMIN
+    // =====================================================
+    @PreAuthorize("hasAnyRole('DOCTOR','LAB_TECHNICIAN','ADMIN')")
+    @GetMapping("/orders/encounter/{encounterId}")
+    public ResponseEntity<List<LabOrderResponseDTO>> getOrdersByEncounter(
+            @PathVariable Long encounterId) {
+
+        return ResponseEntity.ok(labService.getOrdersByEncounter(encounterId));
+    }
+
+    // =====================================================
+    // 🧪 SAMPLE COLLECTION (LAB TECHNICIAN)
+    // =====================================================
+    @PreAuthorize("hasRole('LAB_TECHNICIAN')")
+    @PostMapping("/orders/{orderId}/collect")
+    public ResponseEntity<LabOrderResponseDTO> collectSample(
+            @PathVariable Long orderId,
+            @RequestParam String sampleId) {
+
+        return ResponseEntity.ok(labService.collectSample(orderId, sampleId));
+    }
+
+    // =====================================================
+    // 🧪 ADD LAB RESULT (LAB TECHNICIAN)
+    // =====================================================
+    @PreAuthorize("hasRole('LAB_TECHNICIAN')")
+    @PostMapping("/results")
+    public ResponseEntity<LabResultResponseDTO> addResult(
+            @RequestBody LabResultRequestDTO dto) {
+
+        return ResponseEntity.ok(labService.addLabResult(dto));
+    }
+
+    // =====================================================
+    // 🔍 GET RESULTS BY ORDER
+    // DOCTOR, LAB_TECHNICIAN, ADMIN
+    // =====================================================
+    @PreAuthorize("hasAnyRole('DOCTOR','LAB_TECHNICIAN','ADMIN')")
+    @GetMapping("/results/order/{orderId}")
+    public ResponseEntity<List<LabResultResponseDTO>> getResultsByOrder(
+            @PathVariable Long orderId) {
+
+        return ResponseEntity.ok(labService.getResultsByOrder(orderId));
+    }
+
+    // =====================================================
+    // ✏️ UPDATE RESULT (LAB TECHNICIAN)
+    // =====================================================
+    @PreAuthorize("hasRole('LAB_TECHNICIAN')")
+    @PutMapping("/results/{resultId}")
+    public ResponseEntity<LabResultResponseDTO> updateResult(
+            @PathVariable Long resultId,
+            @RequestParam String value) {
+
+        return ResponseEntity.ok(labService.updateResult(resultId, value));
+    }
+}
